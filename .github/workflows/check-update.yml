@@ -1,0 +1,259 @@
+name: Check for Superhuman Updates
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full curl nodejs npm
+
+      - name: Get current PKGBUILD versions
+        id: current
+        run: |
+          CURRENT_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          CURRENT_ELECTRON=$(grep -oP '^_electron_version="\K[^"]+' PKGBUILD || echo "unknown")
+          echo "version=$CURRENT_VER" >> $GITHUB_OUTPUT
+          echo "electron=$CURRENT_ELECTRON" >> $GITHUB_OUTPUT
+          echo "Current app version: $CURRENT_VER"
+          echo "Current Electron version: $CURRENT_ELECTRON"
+
+      - name: Download and extract Superhuman
+        id: upstream
+        run: |
+          echo "Downloading Superhuman.exe..."
+          curl -sL "https://assets.mail.superhuman.com/webapp/download/Superhuman.exe" -o Superhuman.exe
+
+          echo "Extracting installer..."
+          mkdir -p extract
+          7z x -y Superhuman.exe -o"extract" > /dev/null
+
+          echo "Extracting app..."
+          mkdir -p app-win
+          7z x -y "extract/\$PLUGINSDIR/app-64.7z" -o"app-win" > /dev/null
+
+          # Get Electron version from binary
+          ELECTRON_VER=$(strings app-win/Superhuman.exe 2>/dev/null | grep -oP 'Electron/\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "Detected Electron version: $ELECTRON_VER"
+
+          # Extract app.asar to get package.json version
+          npm install --silent @electron/asar
+          mkdir -p asar-contents
+          npx @electron/asar extract app-win/resources/app.asar asar-contents
+
+          # Get app version from package.json
+          APP_VER=$(grep -oP '"version"\s*:\s*"\K[^"]+' asar-contents/package.json)
+          echo "Detected app version: $APP_VER"
+
+          # Output results
+          if [ -n "$APP_VER" ]; then
+            echo "version=$APP_VER" >> $GITHUB_OUTPUT
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "$ELECTRON_VER" ]; then
+            echo "electron=$ELECTRON_VER" >> $GITHUB_OUTPUT
+          fi
+
+          # Cleanup
+          rm -rf extract app-win asar-contents node_modules Superhuman.exe package-lock.json
+
+      - name: Compare versions
+        id: compare
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          UPSTREAM="${{ steps.upstream.outputs.version }}"
+          CURRENT_ELECTRON="${{ steps.current.outputs.electron }}"
+          UPSTREAM_ELECTRON="${{ steps.upstream.outputs.electron }}"
+
+          if [ "${{ steps.upstream.outputs.found }}" != "true" ]; then
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "Could not determine upstream version"
+            exit 0
+          fi
+
+          NEEDS_UPDATE=false
+
+          # Check app version
+          if [ "$CURRENT" != "$UPSTREAM" ]; then
+            HIGHER=$(printf '%s\n%s' "$CURRENT" "$UPSTREAM" | sort -V | tail -n1)
+            if [ "$HIGHER" = "$UPSTREAM" ]; then
+              echo "New app version available: $UPSTREAM (current: $CURRENT)"
+              NEEDS_UPDATE=true
+            fi
+          fi
+
+          # Check Electron version
+          if [ -n "$UPSTREAM_ELECTRON" ] && [ "$CURRENT_ELECTRON" != "$UPSTREAM_ELECTRON" ]; then
+            echo "New Electron version: $UPSTREAM_ELECTRON (current: $CURRENT_ELECTRON)"
+            NEEDS_UPDATE=true
+          fi
+
+          if [ "$NEEDS_UPDATE" = "true" ]; then
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "No update needed"
+          fi
+
+      - name: Update PKGBUILD
+        if: steps.compare.outputs.needs_update == 'true'
+        run: |
+          APP_VER="${{ steps.upstream.outputs.version }}"
+          ELECTRON_VER="${{ steps.upstream.outputs.electron }}"
+
+          echo "Updating PKGBUILD..."
+
+          # Update app version
+          sed -i "s/^pkgver=.*/pkgver=$APP_VER/" PKGBUILD
+
+          # Reset pkgrel to 1 for new version
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+          # Update Electron version if detected
+          if [ -n "$ELECTRON_VER" ]; then
+            sed -i "s/^_electron_version=\".*\"/_electron_version=\"$ELECTRON_VER\"/" PKGBUILD
+          fi
+
+          echo "Updated PKGBUILD:"
+          echo "  pkgver=$APP_VER"
+          echo "  _electron_version=$ELECTRON_VER"
+
+      - name: Generate .SRCINFO
+        if: steps.compare.outputs.needs_update == 'true'
+        run: |
+          APP_VER="${{ steps.upstream.outputs.version }}"
+
+          # Generate .SRCINFO manually
+          cat > .SRCINFO << 'SRCINFO_EOF'
+          pkgbase = superhuman
+          	pkgdesc = The fastest email experience ever made (unofficial)
+          	pkgver = APP_VERSION_PLACEHOLDER
+          	pkgrel = 1
+          	url = https://superhuman.com
+          	arch = x86_64
+          	license = custom:proprietary
+          	makedepends = p7zip
+          	makedepends = nodejs
+          	makedepends = npm
+          	makedepends = wget
+          	makedepends = unzip
+          	depends = gtk3
+          	depends = nss
+          	depends = alsa-lib
+          	depends = libxss
+          	depends = libxtst
+          	depends = libdrm
+          	depends = mesa
+          	depends = libnotify
+          	optdepends = libappindicator-gtk3: System tray support
+          	optdepends = xdg-utils: Protocol handler registration
+          	options = !strip
+          	source = Superhuman.exe::https://assets.mail.superhuman.com/webapp/download/Superhuman.exe
+          	sha256sums = SKIP
+
+          pkgname = superhuman
+          SRCINFO_EOF
+
+          # Replace placeholder with actual version
+          sed -i "s/APP_VERSION_PLACEHOLDER/$APP_VER/" .SRCINFO
+
+      - name: Commit changes to this repo
+        if: steps.compare.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
+          git push
+
+      - name: Push to AUR
+        if: steps.compare.outputs.needs_update == 'true'
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          # Skip if no AUR key configured
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "AUR_SSH_KEY not configured, skipping AUR push"
+            exit 0
+          fi
+
+          # Setup SSH for AUR
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+
+          cat >> ~/.ssh/config << 'SSH_EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          SSH_EOF
+
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Clone AUR repo, update, and push
+          git clone ssh://aur@aur.archlinux.org/superhuman.git aur-repo || {
+            echo "AUR repo doesn't exist yet, skipping"
+            exit 0
+          }
+
+          cp PKGBUILD .SRCINFO aur-repo/
+          cd aur-repo
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
+          git push
+
+      - name: Create GitHub Release
+        if: steps.compare.outputs.needs_update == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.upstream.outputs.version }}
+          name: Superhuman Linux v${{ steps.upstream.outputs.version }}
+          body: |
+            Automated update to Superhuman v${{ steps.upstream.outputs.version }}
+
+            **Electron version:** ${{ steps.upstream.outputs.electron }}
+
+            ## Installation
+
+            **AUR helpers:**
+            ```bash
+            paru -S superhuman
+
+            yay -S superhuman
+            ```
+
+            **Manual build:**
+            ```bash
+            git clone https://github.com/${{ github.repository }}
+            cd superhuman-linux
+            makepkg -si
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Update Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Current | Upstream |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| App Version | ${{ steps.current.outputs.version }} | ${{ steps.upstream.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Electron | ${{ steps.current.outputs.electron }} | ${{ steps.upstream.outputs.electron }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Update needed:** ${{ steps.compare.outputs.needs_update }}" >> $GITHUB_STEP_SUMMARY
