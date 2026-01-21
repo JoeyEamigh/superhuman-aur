@@ -1,11 +1,9 @@
-// Superhuman Linux - Self-initializing Tray Module with Account Switcher
-const { app, Tray, Menu, nativeImage, ipcMain, BrowserWindow } = require('electron');
+// Superhuman Linux - Tray Module (Close to Tray)
+const { app, Tray, Menu, nativeImage, BrowserWindow } = require('electron');
 const path = require('path');
 
 let tray = null;
-let mainWindow = null;
 let isQuitting = false;
-let knownAccounts = new Map();
 
 function getIconPath() {
     const possiblePaths = [
@@ -24,79 +22,68 @@ function getIconPath() {
     return null;
 }
 
+function getVisibleWindow() {
+    const allWindows = BrowserWindow.getAllWindows();
+    for (const win of allWindows) {
+        const bounds = win.getBounds();
+        if (bounds.width > 100 && bounds.height > 100) {
+            return win;
+        }
+    }
+    return allWindows[0] || null;
+}
+
+function showWindow(win) {
+    if (!win) return;
+    win.show();
+    win.focus();
+    // Force repaint - Electron sometimes doesn't redraw after hide/show
+    if (win.webContents) {
+        win.webContents.invalidate();
+    }
+}
+
 function rebuildTrayMenu() {
     if (!tray) return;
-    const menuItems = [];
 
-    menuItems.push({
-        label: mainWindow && mainWindow.isVisible() ? 'Hide Superhuman' : 'Show Superhuman',
-        click: () => {
-            if (mainWindow) {
-                if (mainWindow.isVisible()) {
-                    mainWindow.hide();
-                } else {
-                    mainWindow.show();
-                    mainWindow.focus();
+    const visibleWin = getVisibleWindow();
+    const isVisible = visibleWin && visibleWin.isVisible();
+
+    const menuItems = [
+        {
+            label: isVisible ? 'Hide Superhuman' : 'Show Superhuman',
+            click: () => {
+                const win = getVisibleWindow();
+                if (win) {
+                    if (win.isVisible()) {
+                        win.hide();
+                    } else {
+                        showWindow(win);
+                    }
+                    rebuildTrayMenu();
                 }
-                rebuildTrayMenu();
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'New Window',
+            click: () => {
+                if (global.main && typeof global.main.createWindow === 'function') {
+                    global.main.createWindow({});
+                }
+            }
+        },
+        { type: 'separator' },
+        {
+            label: 'Quit Superhuman',
+            click: () => {
+                isQuitting = true;
+                app.quit();
             }
         }
-    });
-
-    menuItems.push({ type: 'separator' });
-
-    if (knownAccounts.size > 0) {
-        menuItems.push({ label: 'Accounts', enabled: false });
-        for (const [email] of knownAccounts) {
-            menuItems.push({
-                label: '  ' + email,
-                click: () => { switchToAccount(email); }
-            });
-        }
-        menuItems.push({ type: 'separator' });
-    }
-
-    menuItems.push({
-        label: 'New Window',
-        click: () => { createNewWindow(); }
-    });
-
-    menuItems.push({ type: 'separator' });
-
-    menuItems.push({
-        label: 'Quit Superhuman',
-        click: () => {
-            isQuitting = true;
-            app.quit();
-        }
-    });
+    ];
 
     tray.setContextMenu(Menu.buildFromTemplate(menuItems));
-}
-
-function switchToAccount(email) {
-    if (global.main && typeof global.main.bestTabForEmail === 'function') {
-        const { foundWindow, foundTab } = global.main.bestTabForEmail(email);
-        if (foundWindow && foundTab) {
-            foundWindow.show();
-            foundWindow.focus();
-            foundWindow.switchTab(foundTab);
-            return;
-        }
-    }
-    if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-    }
-}
-
-function createNewWindow() {
-    if (global.main && typeof global.main.createWindow === 'function') {
-        global.main.createWindow({});
-    } else if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-    }
 }
 
 function createTray() {
@@ -117,12 +104,12 @@ function createTray() {
     rebuildTrayMenu();
 
     tray.on('click', () => {
-        if (mainWindow) {
-            if (mainWindow.isVisible()) {
-                mainWindow.hide();
+        const win = getVisibleWindow();
+        if (win) {
+            if (win.isVisible()) {
+                win.hide();
             } else {
-                mainWindow.show();
-                mainWindow.focus();
+                showWindow(win);
             }
             rebuildTrayMenu();
         }
@@ -130,11 +117,28 @@ function createTray() {
 }
 
 function setupWindowCloseToTray(window) {
-    if (!mainWindow) {
-        mainWindow = window;
-    }
+    const bounds = window.getBounds();
+    const isVisibleWindow = bounds.width > 100 && bounds.height > 100;
 
+    if (!isVisibleWindow) return; // Skip background windows
+
+    console.log('[Superhuman Linux] Setting up close handler for window');
+
+    // Intercept the close method itself (custom UI X button may call this)
+    const originalClose = window.close.bind(window);
+    window.close = function() {
+        console.log('[Superhuman Linux] window.close() called, isQuitting:', isQuitting);
+        if (!isQuitting) {
+            window.hide();
+            rebuildTrayMenu();
+        } else {
+            originalClose();
+        }
+    };
+
+    // Also handle the close event (for system close button)
     window.on('close', (event) => {
+        console.log('[Superhuman Linux] Window close event, isQuitting:', isQuitting);
         if (!isQuitting) {
             event.preventDefault();
             window.hide();
@@ -144,74 +148,67 @@ function setupWindowCloseToTray(window) {
         return true;
     });
 
-    window.on('show', () => { rebuildTrayMenu(); });
+    window.on('show', () => {
+        // Force repaint when window is shown (fixes blank content after hide)
+        if (window.webContents) {
+            window.webContents.invalidate();
+        }
+        rebuildTrayMenu();
+    });
     window.on('hide', () => { rebuildTrayMenu(); });
 }
 
-function setupAccountTracking() {
-    const originalEmit = ipcMain.emit.bind(ipcMain);
-    ipcMain.emit = function(channel, event, ...args) {
-        if (channel === 'SH_SET_ACCOUNT' && args[0] && args[0].emailAddress) {
-            knownAccounts.set(args[0].emailAddress, {
-                emailAddress: args[0].emailAddress,
-                accountColor: args[0].accountColor,
-                theme: args[0].theme
-            });
-            rebuildTrayMenu();
-        }
-        return originalEmit(channel, event, ...args);
-    };
-
-    setTimeout(() => {
-        if (global.main && global.main.windows) {
-            for (const win of global.main.windows) {
-                if (win.accounts) {
-                    for (const [email, account] of Object.entries(win.accounts)) {
-                        knownAccounts.set(email, account);
-                    }
-                }
-            }
-            rebuildTrayMenu();
-        }
-    }, 3000);
-}
-
-// Self-initialization: set up tray when app is ready
 function init() {
+    console.log('[Superhuman Linux] Tray module initializing...');
     createTray();
-    setupAccountTracking();
 
-    // Capture all windows and set up close-to-tray
+    // Set up close-to-tray for all windows
     app.on('browser-window-created', (event, window) => {
-        if (!mainWindow) {
-            mainWindow = window;
-        }
+        console.log('[Superhuman Linux] Window created, setting up close-to-tray');
         setupWindowCloseToTray(window);
     });
 
-    // Also capture any existing windows
-    const existingWindows = BrowserWindow.getAllWindows();
-    for (const window of existingWindows) {
-        if (!mainWindow) {
-            mainWindow = window;
-        }
+    // Also handle existing windows
+    const existing = BrowserWindow.getAllWindows();
+    console.log('[Superhuman Linux] Found', existing.length, 'existing windows');
+    for (const window of existing) {
         setupWindowCloseToTray(window);
     }
 }
 
-app.on('before-quit', () => { isQuitting = true; });
-app.on('activate', () => { if (mainWindow) mainWindow.show(); });
+// Intercept quit attempts - only allow if user explicitly chose Quit from tray
+const originalQuit = app.quit.bind(app);
+app.quit = function() {
+    console.log('[Superhuman Linux] app.quit() called, isQuitting:', isQuitting);
+    if (isQuitting) {
+        originalQuit();
+    } else {
+        console.log('[Superhuman Linux] Blocked quit attempt');
+    }
+};
 
-// Initialize when app is ready, or immediately if already ready
+// Prevent app from quitting when all windows are closed
+app.on('window-all-closed', () => {
+    console.log('[Superhuman Linux] window-all-closed, isQuitting:', isQuitting);
+    // Do nothing - don't quit
+});
+
+app.on('before-quit', (event) => {
+    console.log('[Superhuman Linux] before-quit, isQuitting:', isQuitting);
+    if (!isQuitting) {
+        event.preventDefault();
+    }
+});
+app.on('activate', () => {
+    const win = getVisibleWindow();
+    if (win) showWindow(win);
+});
+
+// Initialize when app is ready
 if (app.isReady()) {
     init();
 } else {
     app.whenReady().then(init);
 }
 
-module.exports = {
-    createTray,
-    setupWindowCloseToTray,
-    setQuitting: (val) => { isQuitting = val; },
-    rebuildTrayMenu
-};
+module.exports = { createTray, setupWindowCloseToTray, rebuildTrayMenu };
