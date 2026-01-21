@@ -122,12 +122,12 @@ function setupWindowCloseToTray(window) {
 
     if (!isVisibleWindow) return; // Skip background windows
 
-    console.log('[Superhuman Linux] Setting up close handler for window');
+    // console.log('[Superhuman Linux] Setting up close handler for window');
 
     // Intercept the close method itself (custom UI X button may call this)
     const originalClose = window.close.bind(window);
     window.close = function() {
-        console.log('[Superhuman Linux] window.close() called, isQuitting:', isQuitting);
+        // console.log('[Superhuman Linux] window.close() called, isQuitting:', isQuitting);
         if (!isQuitting) {
             window.hide();
             rebuildTrayMenu();
@@ -138,7 +138,7 @@ function setupWindowCloseToTray(window) {
 
     // Also handle the close event (for system close button)
     window.on('close', (event) => {
-        console.log('[Superhuman Linux] Window close event, isQuitting:', isQuitting);
+        // console.log('[Superhuman Linux] Window close event, isQuitting:', isQuitting);
         if (!isQuitting) {
             event.preventDefault();
             window.hide();
@@ -159,18 +159,18 @@ function setupWindowCloseToTray(window) {
 }
 
 function init() {
-    console.log('[Superhuman Linux] Tray module initializing...');
+    // console.log('[Superhuman Linux] Tray module initializing...');
     createTray();
 
     // Set up close-to-tray for all windows
     app.on('browser-window-created', (event, window) => {
-        console.log('[Superhuman Linux] Window created, setting up close-to-tray');
+        // console.log('[Superhuman Linux] Window created, setting up close-to-tray');
         setupWindowCloseToTray(window);
     });
 
     // Also handle existing windows
     const existing = BrowserWindow.getAllWindows();
-    console.log('[Superhuman Linux] Found', existing.length, 'existing windows');
+    // console.log('[Superhuman Linux] Found', existing.length, 'existing windows');
     for (const window of existing) {
         setupWindowCloseToTray(window);
     }
@@ -179,22 +179,22 @@ function init() {
 // Intercept quit attempts - only allow if user explicitly chose Quit from tray
 const originalQuit = app.quit.bind(app);
 app.quit = function() {
-    console.log('[Superhuman Linux] app.quit() called, isQuitting:', isQuitting);
+    // console.log('[Superhuman Linux] app.quit() called, isQuitting:', isQuitting);
     if (isQuitting) {
         originalQuit();
     } else {
-        console.log('[Superhuman Linux] Blocked quit attempt');
+        // console.log('[Superhuman Linux] Blocked quit attempt');
     }
 };
 
 // Prevent app from quitting when all windows are closed
 app.on('window-all-closed', () => {
-    console.log('[Superhuman Linux] window-all-closed, isQuitting:', isQuitting);
+    // console.log('[Superhuman Linux] window-all-closed, isQuitting:', isQuitting);
     // Do nothing - don't quit
 });
 
 app.on('before-quit', (event) => {
-    console.log('[Superhuman Linux] before-quit, isQuitting:', isQuitting);
+    // console.log('[Superhuman Linux] before-quit, isQuitting:', isQuitting);
     if (!isQuitting) {
         event.preventDefault();
     }
