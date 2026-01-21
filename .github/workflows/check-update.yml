@@ -15,9 +15,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full curl nodejs npm
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: p7zip-full
+          version: 1.0
 
       - name: Get current PKGBUILD versions
         id: current
@@ -137,13 +138,14 @@ jobs:
         run: |
           APP_VER="${{ steps.upstream.outputs.version }}"
 
-          # Generate .SRCINFO manually
-          cat > .SRCINFO << 'SRCINFO_EOF'
+          # Generate .SRCINFO manually (must match PKGBUILD structure)
+          cat > .SRCINFO << SRCINFO_EOF
           pkgbase = superhuman
           	pkgdesc = The fastest email experience ever made (unofficial)
-          	pkgver = APP_VERSION_PLACEHOLDER
+          	pkgver = ${APP_VER}
           	pkgrel = 1
           	url = https://superhuman.com
+          	install = superhuman.install
           	arch = x86_64
           	license = custom:proprietary
           	makedepends = p7zip
@@ -161,15 +163,15 @@ jobs:
           	depends = libnotify
           	optdepends = libappindicator-gtk3: System tray support
           	optdepends = xdg-utils: Protocol handler registration
+          	noextract = Superhuman.exe
           	options = !strip
           	source = Superhuman.exe::https://assets.mail.superhuman.com/webapp/download/Superhuman.exe
+          	source = linux_tray.js
+          	sha256sums = SKIP
           	sha256sums = SKIP
 
           pkgname = superhuman
           SRCINFO_EOF
-
-          # Replace placeholder with actual version
-          sed -i "s/APP_VERSION_PLACEHOLDER/$APP_VER/" .SRCINFO
 
       - name: Commit changes to this repo
         if: steps.compare.outputs.needs_update == 'true'
@@ -210,9 +212,12 @@ jobs:
             exit 0
           }
 
-          cp PKGBUILD .SRCINFO aur-repo/
+          # Copy all required files (AUR doesn't allow subdirectories)
+          cp PKGBUILD .SRCINFO linux_tray.js superhuman.install aur-repo/
+          cp assets/superhuman.png aur-repo/superhuman.png
+
           cd aur-repo
-          git add PKGBUILD .SRCINFO
+          git add PKGBUILD .SRCINFO linux_tray.js superhuman.install superhuman.png
           git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
           git push
 
