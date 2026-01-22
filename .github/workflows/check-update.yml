@@ -173,15 +173,6 @@ jobs:
           pkgname = superhuman
           SRCINFO_EOF
 
-      - name: Commit changes to this repo
-        if: steps.compare.outputs.needs_update == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add PKGBUILD .SRCINFO
-          git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
-          git push
-
       - name: Push to AUR
         if: steps.compare.outputs.needs_update == 'true'
         env:
@@ -217,7 +208,18 @@ jobs:
           cp assets/superhuman.png aur-repo/superhuman.png
 
           cd aur-repo
+          git config user.name "Joey Eamigh"
+          git config user.email "55670930+JoeyEamigh@users.noreply.github.com"
           git add PKGBUILD .SRCINFO linux_tray.js superhuman.install superhuman.png
+          git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
+          git push
+
+      - name: Commit changes to this repo
+        if: steps.compare.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
           git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
           git push
 
