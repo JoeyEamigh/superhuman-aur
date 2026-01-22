@@ -1,6 +1,6 @@
 # Superhuman AUR
 
-Unofficial AUR autopublisher for of [Superhuman](https://superhuman.com) email client.
+Unofficial AUR autopublisher for the [Superhuman](https://superhuman.com) email client.
 
 ## Installation
 
