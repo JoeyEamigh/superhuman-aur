@@ -70,7 +70,10 @@ jobs:
           fi
 
           # Cleanup
-          rm -rf extract app-win asar-contents node_modules Superhuman.exe package-lock.json
+          # Superhuman.exe is intentionally kept: the verification step below reuses these
+          # exact bytes. The download URL always serves latest, so re-fetching could
+          # verify a different artifact than the one whose version we just detected.
+          rm -rf extract app-win asar-contents node_modules package-lock.json
 
       - name: Compare versions
         id: compare
@@ -133,45 +136,38 @@ jobs:
           echo "  pkgver=$APP_VER"
           echo "  _electron_version=$ELECTRON_VER"
 
-      - name: Generate .SRCINFO
+      - name: Update .SRCINFO
         if: steps.compare.outputs.needs_update == 'true'
         run: |
           APP_VER="${{ steps.upstream.outputs.version }}"
 
-          # Generate .SRCINFO manually (must match PKGBUILD structure)
-          cat > .SRCINFO << SRCINFO_EOF
-          pkgbase = superhuman
-          	pkgdesc = The fastest email experience ever made (unofficial)
-          	pkgver = ${APP_VER}
-          	pkgrel = 1
-          	url = https://superhuman.com
-          	install = superhuman.install
-          	arch = x86_64
-          	license = custom:proprietary
-          	makedepends = p7zip
-          	makedepends = nodejs
-          	makedepends = npm
-          	makedepends = wget
-          	makedepends = unzip
-          	depends = gtk3
-          	depends = nss
-          	depends = alsa-lib
-          	depends = libxss
-          	depends = libxtst
-          	depends = libdrm
-          	depends = mesa
-          	depends = libnotify
-          	optdepends = libappindicator-gtk3: System tray support
-          	optdepends = xdg-utils: Protocol handler registration
-          	noextract = Superhuman-${APP_VER}.exe
-          	options = !strip
-          	source = Superhuman-${APP_VER}.exe::https://assets.mail.superhuman.com/webapp/download/Superhuman.exe
-          	source = linux_tray.js
-          	sha256sums = SKIP
-          	sha256sums = SKIP
+          # Patch the checked-in .SRCINFO in place so every field other than the
+          # version stays in sync with PKGBUILD automatically.
+          sed -i -E \
+            -e "s|^\tpkgver = .*|\tpkgver = ${APP_VER}|" \
+            -e "s|^\tpkgrel = .*|\tpkgrel = 1|" \
+            -e "s|^\tnoextract = Superhuman-.*\.exe$|\tnoextract = Superhuman-${APP_VER}.exe|" \
+            -e "s|^\tsource = Superhuman-.*\.exe::|\tsource = Superhuman-${APP_VER}.exe::|" \
+            .SRCINFO
 
-          pkgname = superhuman
-          SRCINFO_EOF
+          echo "Updated .SRCINFO:"
+          cat .SRCINFO
+
+      - name: Verify Linux patches still apply
+        if: steps.compare.outputs.needs_update == 'true'
+        run: |
+          APP_VER="${{ steps.upstream.outputs.version }}"
+
+          # Stage a build context so makepkg never writes into the checkout.
+          mkdir -p /tmp/verify/assets
+          cp PKGBUILD .SRCINFO linux_tray.js superhuman.install /tmp/verify/
+          cp assets/superhuman.png /tmp/verify/assets/
+          mv Superhuman.exe "/tmp/verify/Superhuman-${APP_VER}.exe"
+
+          docker run --rm \
+            -v /tmp/verify:/pkgbuild \
+            -v "${{ github.workspace }}/.github/verify-patches.sh:/verify.sh:ro" \
+            archlinux:base-devel bash /verify.sh
 
       - name: Push to AUR
         if: steps.compare.outputs.needs_update == 'true'

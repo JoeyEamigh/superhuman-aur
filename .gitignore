@@ -1,4 +1,5 @@
 dist/
 Superhuman.exe
+Superhuman-*.exe
 *.pkg.tar.*
 aur-repo/
