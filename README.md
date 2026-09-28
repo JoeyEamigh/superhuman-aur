@@ -20,13 +20,15 @@ cd superhuman
 makepkg -si
 ```
 
-## Google sign-in on Linux
+## OAuth Login
 
-Superhuman's login page only hands sign-in back to the desktop app on macOS and Windows, so on Linux the browser stays on `https://mail.superhuman.com/~login#...` after Google auth. Copy that address from the browser, then either pick **Finish Sign-In from Clipboard** from the tray menu or run:
+Superhuman's login page only hands sign-in back to the desktop app on macOS and Windows, so on Linux the browser stays on `https://mail.superhuman.com/~login#...` after OAuth auth. Copy that address from the browser, then either pick **Finish Sign-In from Clipboard** from the tray menu or run:
 
 ```bash
 superhuman 'https://mail.superhuman.com/~login#...'
 ```
+
+You can also use a UA changer extension or change the UA from browser devtools.
 
 ## Legal
 
