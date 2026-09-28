@@ -22,10 +22,10 @@ makepkg -si
 
 ## Google sign-in on Linux
 
-Superhuman's server-side OAuth flow doesn't hand off to the app via `superhuman://` on Linux (there's no official Linux client, so it isn't recognized) - it redirects to a real `https://mail.superhuman.com/~login#...` URL, and the page falls back to browser-only onboarding if nothing intercepts it. If "Sign in with Google" doesn't return you to the app, copy that URL from the address bar right after completing Google auth and run:
+Superhuman's login page only hands sign-in back to the desktop app on macOS and Windows, so on Linux the browser stays on `https://mail.superhuman.com/~login#...` after Google auth. Copy that address from the browser, then either pick **Finish Sign-In from Clipboard** from the tray menu or run:
 
 ```bash
-superhuman-login 'https://mail.superhuman.com/~login#...'
+superhuman 'https://mail.superhuman.com/~login#...'
 ```
 
 ## Legal

@@ -23,12 +23,10 @@ source=(
     "Superhuman-${pkgver}.exe::https://assets.mail.superhuman.com/webapp/download/Superhuman.exe"
     "linux_patches.js"
     "linux_shim.js"
-    "superhuman-login"
 )
 sha256sums=('SKIP'
             'e7354121be70d07d6a69150bb37376a2a16b9253b17762b723fb1a9a8714e56b'
-            '6aa49e9b7478122f42bae6a36f3599d41812f71a189c6d0480725716aa1d6d3c'
-            'c63a4cc3ff0b0c4ff1ef6a13fd1d97d16ba5b6dd9984f8df5c57efdd50f273a6')
+            '859be0a8e8a72c25c8288380dae29e281cd9e20a81cc8ddb46d99537295afd20')
 noextract=("Superhuman-${pkgver}.exe")
 
 _electron_version="41.6.1"
@@ -155,9 +153,6 @@ package() {
     # Create bin symlinks
     install -dm755 "$pkgdir/usr/bin"
     ln -s /opt/superhuman/superhuman "$pkgdir/usr/bin/superhuman"
-
-    # Manual OAuth login helper - see superhuman-login for why this exists
-    install -Dm755 "$srcdir/superhuman-login" "$pkgdir/usr/bin/superhuman-login"
 
     # Install desktop file
     install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/superhuman.desktop" << 'EOF'
