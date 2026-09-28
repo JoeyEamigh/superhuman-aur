@@ -24,7 +24,7 @@ fi
 # makepkg exits 0 when only optional patches fail, so the publish gate checks the log.
 if grep -q 'PATCH FAILED' "$LOG"; then
   echo "::error::A Linux compatibility patch no longer applies to the current upstream build. Not publishing."
-  grep -E 'PATCH FAILED|expected [0-9]+ match|anchor:|optional patch\(es\) failed|  - ' "$LOG" || true
+  grep -E 'PATCH FAILED|expected [0-9]+ match|anchor:|patch\(es\) failed|  - ' "$LOG" || true
   exit 1
 fi
 

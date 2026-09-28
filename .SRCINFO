@@ -24,10 +24,12 @@ pkgbase = superhuman
 	noextract = Superhuman-1041.0.51.exe
 	options = !strip
 	source = Superhuman-1041.0.51.exe::https://assets.mail.superhuman.com/webapp/download/Superhuman.exe
-	source = linux_tray.js
+	source = linux_patches.js
+	source = linux_shim.js
 	source = superhuman-login
 	sha256sums = SKIP
-	sha256sums = 2ca108b624f8e444e3ad4a70f5d066342a85dc6d245ce63220a91e5c2b4cfd25
+	sha256sums = e7354121be70d07d6a69150bb37376a2a16b9253b17762b723fb1a9a8714e56b
+	sha256sums = 6aa49e9b7478122f42bae6a36f3599d41812f71a189c6d0480725716aa1d6d3c
 	sha256sums = c63a4cc3ff0b0c4ff1ef6a13fd1d97d16ba5b6dd9984f8df5c57efdd50f273a6
 
 pkgname = superhuman

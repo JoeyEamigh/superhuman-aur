@@ -160,7 +160,7 @@ jobs:
 
           # Stage a build context so makepkg never writes into the checkout.
           mkdir -p /tmp/verify/assets
-          cp PKGBUILD .SRCINFO linux_tray.js superhuman.install /tmp/verify/
+          cp PKGBUILD .SRCINFO linux_patches.js linux_shim.js superhuman.install /tmp/verify/
           cp assets/superhuman.png /tmp/verify/assets/
           mv Superhuman.exe "/tmp/verify/Superhuman-${APP_VER}.exe"
 
@@ -199,14 +199,15 @@ jobs:
             exit 0
           }
 
-          # Copy all required files (AUR doesn't allow subdirectories)
-          cp PKGBUILD .SRCINFO linux_tray.js superhuman.install aur-repo/
+          # Mirror the package files exactly (AUR doesn't allow subdirectories)
+          git -C aur-repo rm -rq --ignore-unmatch .
+          cp PKGBUILD .SRCINFO linux_patches.js linux_shim.js superhuman.install aur-repo/
           cp assets/superhuman.png aur-repo/superhuman.png
 
           cd aur-repo
           git config user.name "Joey Eamigh"
           git config user.email "55670930+JoeyEamigh@users.noreply.github.com"
-          git add PKGBUILD .SRCINFO linux_tray.js superhuman.install superhuman.png
+          git add -A
           git commit -m "Update to version ${{ steps.upstream.outputs.version }} (Electron ${{ steps.upstream.outputs.electron }})"
           git push
 
