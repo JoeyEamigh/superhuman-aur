@@ -8,11 +8,11 @@ pkgname=superhuman
 pkgver=1041.0.75
 pkgrel=1
 pkgdesc="The fastest email experience ever made (unofficial)"
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 url="https://superhuman.com"
 license=('custom:proprietary')
 depends=('gtk3' 'nss' 'alsa-lib' 'libcups' 'libxkbcommon' 'libdrm' 'mesa' 'libnotify')
-makedepends=('p7zip' 'nodejs' 'npm' 'wget' 'unzip')
+makedepends=('7zip' 'nodejs' 'npm' 'wget' 'unzip')
 optdepends=(
     'libappindicator-gtk3: System tray support'
     'xdg-utils: Protocol handler registration'
@@ -34,14 +34,21 @@ _electron_version="41.10.6"
 prepare() {
     cd "$srcdir" || return
 
+    # Current Arch 7zip provides 7z. Some builds provide 7zz. Accept either.
+    if command -v 7zz >/dev/null 2>&1; then
+        _7z=7zz
+    else
+        _7z=7z
+    fi
+
     # Extract Windows installer
     msg2 "Extracting Windows installer..."
     mkdir -p extract
-    7z x -y "Superhuman-${pkgver}.exe" -o"extract" > /dev/null
+    "$_7z" x -y "Superhuman-${pkgver}.exe" -o"extract" > /dev/null
 
     # Extract the app from app-64.7z
     mkdir -p app-win
-    7z x -y "extract/\$PLUGINSDIR/app-64.7z" -o"app-win" > /dev/null
+    "$_7z" x -y "extract/\$PLUGINSDIR/app-64.7z" -o"app-win" > /dev/null
 
     # Detect Electron version
     _electron_version=$(strings app-win/Superhuman.exe 2>/dev/null | grep -oP 'Electron/\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "$_electron_version")
@@ -50,7 +57,14 @@ prepare() {
     # Download Electron for Linux
     msg2 "Downloading Electron ${_electron_version}..."
     mkdir -p electron
-    wget -q "https://github.com/electron/electron/releases/download/v${_electron_version}/electron-v${_electron_version}-linux-x64.zip" \
+    case "$CARCH" in
+        x86_64) _electron_arch=x64 ;;
+        aarch64) _electron_arch=arm64 ;;
+        *) error "Unsupported architecture: $CARCH"; return 1 ;;
+    esac
+    msg2 "Electron target arch: linux-${_electron_arch}"
+
+    wget -q "https://github.com/electron/electron/releases/download/v${_electron_version}/electron-v${_electron_version}-linux-${_electron_arch}.zip" \
         -O electron/electron.zip
     cd electron || return
     unzip -qo electron.zip
@@ -108,6 +122,8 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Electron resolves the desktop entry from this when registering itself as the
 # mailto:/superhuman: handler via xdg-settings.
 export CHROME_DESKTOP="${CHROME_DESKTOP:-superhuman.desktop}"
+# Prefer Wayland on a Wayland session. auto falls back to X11.
+export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-auto}"
 
 ARGS=()
 for arg in "$@"; do
